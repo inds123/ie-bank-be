@@ -1,67 +1,46 @@
-from flask import Flask, request
-from iebank_api import db, app
+from flask import Flask, jsonify, request, abort
+from iebank_api import app, db
 from iebank_api.models import Account
 
-@app.route('/')
-def hello_world():
-    return 'Hello, World!'
+# Home route to display welcome message
+@app.route("/", methods=["GET"])
+def home():
+    return jsonify({"message": "Welcome to IE Bank!"})
 
-@app.route('/skull', methods=['GET'])
-def skull():
-    text = 'Hi! This is the BACKEND SKULL! 💀 '
-    
-    text = text +'<br/>Database URL:' + db.engine.url.database
-    if db.engine.url.host:
-        text = text +'<br/>Database host:' + db.engine.url.host
-    if db.engine.url.port:
-        text = text +'<br/>Database port:' + db.engine.url.port
-    if db.engine.url.username:
-        text = text +'<br/>Database user:' + db.engine.url.username
-    if db.engine.url.password:
-        text = text +'<br/>Database password:' + db.engine.url.password
-    return text
+# CRUD routes for accounts
+@app.route("/accounts", methods=["GET", "POST"])
+def accounts():
+    if request.method == "GET":
+        accounts = Account.query.all()
+        return jsonify([account.serialize() for account in accounts])
 
+    if request.method == "POST":
+        data = request.get_json()
+        new_account = Account(
+            name=data["name"],
+            balance=data["balance"],
+            country=data["country"]  # New field
+        )
+        db.session.add(new_account)
+        db.session.commit()
+        return jsonify(new_account.serialize()), 201
 
-@app.route('/accounts', methods=['POST'])
-def create_account():
-    name = request.json['name']
-    currency = request.json['currency']
-    account = Account(name, currency)
-    db.session.add(account)
-    db.session.commit()
-    return format_account(account)
+@app.route("/accounts/<int:account_id>", methods=["GET", "PUT", "DELETE"])
+def manage_account(account_id):
+    account = Account.query.get_or_404(account_id)
 
-@app.route('/accounts', methods=['GET'])
-def get_accounts():
-    accounts = Account.query.all()
-    return {'accounts': [format_account(account) for account in accounts]}
+    if request.method == "GET":
+        return jsonify(account.serialize())
 
-@app.route('/accounts/<int:id>', methods=['GET'])
-def get_account(id):
-    account = Account.query.get(id)
-    return format_account(account)
+    if request.method == "PUT":
+        data = request.get_json()
+        account.name = data.get("name", account.name)
+        account.balance = data.get("balance", account.balance)
+        account.country = data.get("country", account.country)
+        db.session.commit()
+        return jsonify(account.serialize())
 
-@app.route('/accounts/<int:id>', methods=['PUT'])
-def update_account(id):
-    account = Account.query.get(id)
-    account.name = request.json['name']
-    db.session.commit()
-    return format_account(account)
-
-@app.route('/accounts/<int:id>', methods=['DELETE'])
-def delete_account(id):
-    account = Account.query.get(id)
-    db.session.delete(account)
-    db.session.commit()
-    return format_account(account)
-
-def format_account(account):
-    return {
-        'id': account.id,
-        'name': account.name,
-        'account_number': account.account_number,
-        'balance': account.balance,
-        'currency': account.currency,
-        'status': account.status,
-        'created_at': account.created_at
-    }
+    if request.method == "DELETE":
+        db.session.delete(account)
+        db.session.commit()
+        return jsonify({"message": "Account deleted successfully."}), 204
